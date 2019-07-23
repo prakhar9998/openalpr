@@ -81,12 +81,19 @@ namespace alpr
       virtual ~AlprImpl();
 
       AlprFullDetails recognizeFullDetails(cv::Mat img, std::vector<cv::Rect> regionsOfInterest);
+      AlprFullDetails recognizeFullDetails(cv::Mat img, std::vector<cv::Rect> regionsOfInterest, std::string filename);
 
       AlprResults recognize( std::vector<char> imageBytes );
       AlprResults recognize( std::vector<char> imageBytes, std::vector<AlprRegionOfInterest> regionsOfInterest );
       AlprResults recognize( unsigned char* pixelData, int bytesPerPixel, int imgWidth, int imgHeight, std::vector<AlprRegionOfInterest> regionsOfInterest );
       AlprResults recognize( cv::Mat img );
       AlprResults recognize( cv::Mat img, std::vector<cv::Rect> regionsOfInterest );
+
+      AlprResults recognize( std::vector<char> imageBytes, std::string filename );
+      AlprResults recognize( std::vector<char> imageBytes, std::vector<AlprRegionOfInterest> regionsOfInterest, std::string filename );
+      AlprResults recognize( unsigned char* pixelData, int bytesPerPixel, int imgWidth, int imgHeight, std::vector<AlprRegionOfInterest> regionsOfInterest, std::string filename );
+      AlprResults recognize( cv::Mat img, std::string filename );
+      AlprResults recognize( cv::Mat img, std::vector<cv::Rect> regionsOfInterest, std::string filename );
 
       AlprFullDetails analyzeSingleCountry(cv::Mat colorImg, cv::Mat grayImg, std::vector<cv::Rect> regionsOfInterest);
 

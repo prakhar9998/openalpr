@@ -214,6 +214,138 @@ namespace alpr
     return response;
   }
 
+  //
+  AlprFullDetails AlprImpl::recognizeFullDetails(cv::Mat img, std::vector<cv::Rect> regionsOfInterest, std::string filename)
+  {
+    timespec startTime;
+    getTimeMonotonic(&startTime);
+
+
+    AlprFullDetails response;
+
+    int64_t start_time = getEpochTimeMs();
+
+    // Fix regions of interest in case they extend beyond the bounds of the image
+    for (unsigned int i = 0; i < regionsOfInterest.size(); i++)
+      regionsOfInterest[i] = expandRect(regionsOfInterest[i], 0, 0, img.cols, img.rows);
+
+    for (unsigned int i = 0; i < regionsOfInterest.size(); i++)
+    {
+      response.results.regionsOfInterest.push_back(AlprRegionOfInterest(regionsOfInterest[i].x, regionsOfInterest[i].y,
+              regionsOfInterest[i].width, regionsOfInterest[i].height));
+    }
+
+    if (!img.data)
+    {
+      // Invalid image
+      if (this->config->debugGeneral)
+        std::cerr << "Invalid image" << std::endl;
+
+      return response;
+    }
+
+    // Convert image to grayscale if required
+    Mat grayImg = img;
+    if (img.channels() > 2)
+      cvtColor( img, grayImg, CV_BGR2GRAY );
+    
+    // Prewarp the image and ROIs if configured]
+    std::vector<cv::Rect> warpedRegionsOfInterest = regionsOfInterest;
+    // Warp the image if prewarp is provided
+    grayImg = prewarp->warpImage(grayImg);
+    warpedRegionsOfInterest = prewarp->projectRects(regionsOfInterest, grayImg.cols, grayImg.rows, false);
+
+    // Iterate through each country provided (typically just one)
+    // and aggregate the results if necessary
+    ResultAggregator country_aggregator(MERGE_PICK_BEST, topN, config);
+    for (unsigned int i = 0; i < config->loaded_countries.size(); i++)
+    {
+      if (config->debugGeneral)
+        cout << "Analyzing: " << config->loaded_countries[i] << endl;
+
+      config->setCountry(config->loaded_countries[i]);
+      
+      // Reapply analysis for each multiple analysis value set in the config,
+      // make a minor imperceptible tweak to the input image each time
+      ResultAggregator iter_aggregator(MERGE_COMBINE, topN, config);
+      for (unsigned int iteration = 0; iteration < config->analysis_count; iteration++)
+      {
+        Mat iteration_image = iter_aggregator.applyImperceptibleChange(grayImg, iteration);
+        //drawAndWait(iteration_image);
+        AlprFullDetails iter_results = analyzeSingleCountry(img, iteration_image, warpedRegionsOfInterest);
+        iter_aggregator.addResults(iter_results);
+      }
+      
+      AlprFullDetails sub_results = iter_aggregator.getAggregateResults();
+      sub_results.results.epoch_time = start_time;
+      sub_results.results.img_width = img.cols;
+      sub_results.results.img_height = img.rows;
+      sub_results.results.regionsOfInterest = response.results.regionsOfInterest;
+      
+      country_aggregator.addResults(sub_results);
+    }
+    response = country_aggregator.getAggregateResults();
+
+    timespec endTime;
+    getTimeMonotonic(&endTime);
+    if (config->debugTiming)
+    {
+      cout << "Total Time to process image: " << diffclock(startTime, endTime) << "ms." << endl;
+    }
+
+    if (config->debugGeneral && config->debugShowImages)
+    {
+      for (unsigned int i = 0; i < regionsOfInterest.size(); i++)
+      {
+        rectangle(img, regionsOfInterest[i], Scalar(0,255,0), 2);
+      }
+
+      for (unsigned int i = 0; i < response.plateRegions.size(); i++)
+      {
+        rectangle(img, response.plateRegions[i].rect, Scalar(0, 0, 255), 2);
+      }
+
+      for (unsigned int i = 0; i < response.results.plates.size(); i++)
+      {
+        // Draw a box around the license plate 
+        for (int z = 0; z < 4; z++)
+        {
+          AlprCoordinate* coords = response.results.plates[i].plate_points;
+          Point p1(coords[z].x, coords[z].y);
+          Point p2(coords[(z + 1) % 4].x, coords[(z + 1) % 4].y);
+          line(img, p1, p2, Scalar(255,0,255), 2);
+        }
+        
+        // Draw the individual character boxes
+        for (int q = 0; q < response.results.plates[i].bestPlate.character_details.size(); q++)
+        {
+          AlprChar details = response.results.plates[i].bestPlate.character_details[q];
+          line(img, Point(details.corners[0].x, details.corners[0].y), Point(details.corners[1].x, details.corners[1].y), Scalar(0,255,0), 1);
+          line(img, Point(details.corners[1].x, details.corners[1].y), Point(details.corners[2].x, details.corners[2].y), Scalar(0,255,0), 1);
+          line(img, Point(details.corners[2].x, details.corners[2].y), Point(details.corners[3].x, details.corners[3].y), Scalar(0,255,0), 1);
+          line(img, Point(details.corners[3].x, details.corners[3].y), Point(details.corners[0].x, details.corners[0].y), Scalar(0,255,0), 1);
+        }
+      }
+
+
+      // displayImage(config, "Main Image", img);
+      imwrite(filename + ".jpg", img);
+      // Sleep 1ms
+      sleep_ms(1);
+
+    }
+
+
+    if (config->debugPauseOnFrame)
+    {
+      // Pause indefinitely until they press a key
+      while ((char) cv::waitKey(50) == -1)
+      {}
+    }
+
+    return response;
+  }
+
   AlprFullDetails AlprImpl::analyzeSingleCountry(cv::Mat colorImg, cv::Mat grayImg, std::vector<cv::Rect> warpedRegionsOfInterest)
   {
     AlprFullDetails response;
@@ -480,6 +612,80 @@ namespace alpr
     return fullDetails.results;
   }
 
+  // //
+  AlprResults AlprImpl::recognize( std::vector<char> imageBytes, std::string filename)
+  {
+    try
+    {
+      cv::Mat img = cv::imdecode(cv::Mat(imageBytes), 1);
+      return this->recognize(img);
+    }
+    catch (cv::Exception& e)
+    {
+      std::cerr << "Caught exception in OpenALPR recognize: " << e.msg << std::endl;
+      AlprResults emptyresults;
+      return emptyresults;
+    }
+  }
+
+  AlprResults AlprImpl::recognize(std::vector<char> imageBytes, std::vector<AlprRegionOfInterest> regionsOfInterest, std::string filename)
+  {
+    try
+    {
+      cv::Mat img = cv::imdecode(cv::Mat(imageBytes), 1);
+
+      std::vector<cv::Rect> rois = convertRects(regionsOfInterest);
+
+      AlprFullDetails fullDetails = recognizeFullDetails(img, rois);
+      return fullDetails.results;
+    }
+    catch (cv::Exception& e)
+    {
+      std::cerr << "Caught exception in OpenALPR recognize: " << e.msg << std::endl;
+      AlprResults emptyresults;
+      return emptyresults;
+    }
+  }
+
+  AlprResults AlprImpl::recognize( unsigned char* pixelData, int bytesPerPixel, int imgWidth, int imgHeight, std::vector<AlprRegionOfInterest> regionsOfInterest, std::string filename)
+  {
+
+    try
+    {
+      int arraySize = imgWidth * imgHeight * bytesPerPixel;
+      cv::Mat imgData = cv::Mat(arraySize, 1, CV_8U, pixelData);
+      cv::Mat img = imgData.reshape(bytesPerPixel, imgHeight);
+
+      if (regionsOfInterest.size() == 0)
+      {
+        AlprRegionOfInterest fullFrame(0,0, img.cols, img.rows);
+
+        regionsOfInterest.push_back(fullFrame);
+      }
+
+      return this->recognize(img, this->convertRects(regionsOfInterest), filename);
+    }
+    catch (cv::Exception& e)
+    {
+      std::cerr << "Caught exception in OpenALPR recognize: " << e.msg << std::endl;
+      AlprResults emptyresults;
+      return emptyresults;
+    }
+  }
+
+  AlprResults AlprImpl::recognize(cv::Mat img, std::string filename)
+  {
+    std::vector<cv::Rect> regionsOfInterest;
+    regionsOfInterest.push_back(cv::Rect(0, 0, img.cols, img.rows));
+
+    return this->recognize(img, regionsOfInterest);
+  }
+
+  AlprResults AlprImpl::recognize(cv::Mat img, std::vector<cv::Rect> regionsOfInterest, std::string filename)
+  {
+    AlprFullDetails fullDetails = recognizeFullDetails(img, regionsOfInterest);
+    return fullDetails.results;
+  }
 
    std::vector<cv::Rect> AlprImpl::convertRects(std::vector<AlprRegionOfInterest> regionsOfInterest)
    {

@@ -46,6 +46,7 @@ bool do_motiondetection = true;
 
 /** Function Headers */
 bool detectandshow(Alpr* alpr, cv::Mat frame, std::string region, bool writeJson);
+bool detectandshow(Alpr* alpr, cv::Mat frame, std::string region, bool writeJson, std::string filename);
 bool is_supported_image(std::string image_file);
 
 bool measureProcessingTime = false;
@@ -283,7 +284,7 @@ int main( int argc, const char** argv )
       {
         frame = cv::imread(filename);
 
-        bool plate_found = detectandshow(&alpr, frame, "", outputJson);
+        bool plate_found = detectandshow(&alpr, frame, "", outputJson, filename);
 
         if (!plate_found && !outputJson)
           std::cout << "No license plates found." << std::endl;
@@ -389,8 +390,68 @@ bool detectandshow( Alpr* alpr, cv::Mat frame, std::string region, bool writeJso
     }
   }
 
+  
 
 
   return results.plates.size() > 0;
 }
 
+bool detectandshow( Alpr* alpr, cv::Mat frame, std::string region, bool writeJson, std::string filename)
+{
+
+  timespec startTime;
+  getTimeMonotonic(&startTime);
+
+  std::vector<AlprRegionOfInterest> regionsOfInterest;
+  if (do_motiondetection)
+  {
+	  cv::Rect rectan = motiondetector.MotionDetect(&frame);
+	  if (rectan.width>0) regionsOfInterest.push_back(AlprRegionOfInterest(rectan.x, rectan.y, rectan.width, rectan.height));
+  }
+  else regionsOfInterest.push_back(AlprRegionOfInterest(0, 0, frame.cols, frame.rows));
+  AlprResults results;
+  if (regionsOfInterest.size()>0) results = alpr->recognize(frame.data, frame.elemSize(), frame.cols, frame.rows, regionsOfInterest, filename);
+
+  timespec endTime;
+  getTimeMonotonic(&endTime);
+  double totalProcessingTime = diffclock(startTime, endTime);
+  if (measureProcessingTime)
+    std::cout << "Total Time to process image: " << totalProcessingTime << "ms." << std::endl;
+  
+  
+  if (writeJson)
+  {
+    std::cout << alpr->toJson( results ) << std::endl;
+  }
+  else
+  {
+    for (int i = 0; i < results.plates.size(); i++)
+    {
+      std::cout << "plate" << i << ": " << results.plates[i].topNPlates.size() << " results";
+      if (measureProcessingTime)
+        std::cout << " -- Processing Time = " << results.plates[i].processing_time_ms << "ms.";
+      std::cout << std::endl;
+
+      if (results.plates[i].regionConfidence > 0)
+        std::cout << "State ID: " << results.plates[i].region << " (" << results.plates[i].regionConfidence << "% confidence)" << std::endl;
+      
+      for (int k = 0; k < results.plates[i].topNPlates.size(); k++)
+      {
+        // Replace the multiline newline character with a dash
+        std::string no_newline = results.plates[i].topNPlates[k].characters;
+        std::replace(no_newline.begin(), no_newline.end(), '\n','-');
+        
+        std::cout << "    - " << no_newline << "\t confidence: " << results.plates[i].topNPlates[k].overall_confidence;
+        if (templatePattern.size() > 0 || results.plates[i].regionConfidence > 0)
+          std::cout << "\t pattern_match: " << results.plates[i].topNPlates[k].matches_template;
+        
+        std::cout << std::endl;
+      }
+    }
+  }
+
+  
+
+
+  return results.plates.size() > 0;
+}

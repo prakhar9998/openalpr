@@ -151,15 +151,26 @@ namespace alpr
       // Recognize from an image on disk
       AlprResults recognize(std::string filepath);
 
-	  // Recognize from byte data representing an encoded image (e.g., BMP, PNG, JPG, GIF etc).
-	  AlprResults recognize(std::vector<char> imageBytes);
+      // Recognize from byte data representing an encoded image (e.g., BMP, PNG, JPG, GIF etc).
+      AlprResults recognize(std::vector<char> imageBytes);
 
-	  // Recognize from byte data representing an encoded image (e.g., BMP, PNG, JPG, GIF etc).
-	  AlprResults recognize(std::vector<char> imageBytes, std::vector<AlprRegionOfInterest> regionsOfInterest);
+      // Recognize from byte data representing an encoded image (e.g., BMP, PNG, JPG, GIF etc).
+      AlprResults recognize(std::vector<char> imageBytes, std::vector<AlprRegionOfInterest> regionsOfInterest);
 
       // Recognize from raw pixel data.  
       AlprResults recognize(unsigned char* pixelData, int bytesPerPixel, int imgWidth, int imgHeight, std::vector<AlprRegionOfInterest> regionsOfInterest);
 
+      // Recognize from an image on disk
+      AlprResults recognize(std::string filepath, std::string filename);
+
+      // Recognize from byte data representing an encoded image (e.g., BMP, PNG, JPG, GIF etc).
+      AlprResults recognize(std::vector<char> imageBytes, std::string filename);
+
+      // Recognize from byte data representing an encoded image (e.g., BMP, PNG, JPG, GIF etc).
+      AlprResults recognize(std::vector<char> imageBytes, std::vector<AlprRegionOfInterest> regionsOfInterest, std::string filename);
+
+      // Recognize from raw pixel data.  
+      AlprResults recognize(unsigned char* pixelData, int bytesPerPixel, int imgWidth, int imgHeight, std::vector<AlprRegionOfInterest> regionsOfInterest, std::string filename);
 
       static std::string toJson(const AlprResults results);
       static std::string toJson(const AlprPlateResult result);

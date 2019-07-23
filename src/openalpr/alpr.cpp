@@ -80,6 +80,51 @@ namespace alpr
     return impl->recognize(pixelData, bytesPerPixel, imgWidth, imgHeight, regionsOfInterest);
   }
 
+  //
+
+  AlprResults Alpr::recognize(std::string filepath, std::string filename)
+  {
+    
+    std::ifstream ifs(filepath.c_str(), std::ios::binary|std::ios::ate);
+    
+    if (ifs)
+      {
+      std::ifstream::pos_type pos = ifs.tellg();
+
+      std::vector<char>  buffer(pos);
+
+      ifs.seekg(0, std::ios::beg);
+      ifs.read(&buffer[0], pos);
+
+      return this->recognize( buffer );
+    }
+    else
+    {
+      std::cerr << "file does not exist: " << filepath << std::endl;
+      AlprResults emptyResults;
+      emptyResults.epoch_time = getEpochTimeMs();
+      emptyResults.img_width = 0;
+      emptyResults.img_height = 0;
+      emptyResults.total_processing_time_ms = 0;
+      return emptyResults;
+    }
+  }
+
+  AlprResults Alpr::recognize(std::vector<char> imageBytes, std::string filename)
+  {
+    return impl->recognize(imageBytes, filename);
+  }
+
+  AlprResults Alpr::recognize(std::vector<char> imageBytes, std::vector<AlprRegionOfInterest> regionsOfInterest, std::string filename)
+  {
+	  return impl->recognize(imageBytes, regionsOfInterest, filename);
+  }
+
+  AlprResults Alpr::recognize(unsigned char* pixelData, int bytesPerPixel, int imgWidth, int imgHeight, std::vector<AlprRegionOfInterest> regionsOfInterest, std::string filename)
+  {
+    return impl->recognize(pixelData, bytesPerPixel, imgWidth, imgHeight, regionsOfInterest, filename);
+  }
+
   std::string Alpr::toJson( AlprResults results )
   {
     return AlprImpl::toJson(results);
